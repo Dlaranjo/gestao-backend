@@ -1,5 +1,7 @@
 from sqlmodel import Session, select
-from models import Projeto, Sprint, Atividade, Planejado, Executado, Usuario
+from sqlalchemy.orm import selectinload
+from models import Projeto, Sprint, Atividade, Executado, Usuario
+from typing import List
 
 # Projeto CRUD
 
@@ -58,25 +60,6 @@ def delete_atividade(session: Session, atividade_id: int):
         return True
     return False
 
-# Planejado CRUD
-
-def get_planejados(session: Session):
-    return session.exec(select(Planejado)).all()
-
-def create_planejado(session: Session, planejado: Planejado):
-    session.add(planejado)
-    session.commit()
-    session.refresh(planejado)
-    return planejado
-
-def delete_planejado(session: Session, projeto_id: int, sprint_id: int, atividade_id: int):
-    planejado = session.get(Planejado, (projeto_id, sprint_id, atividade_id))
-    if planejado:
-        session.delete(planejado)
-        session.commit()
-        return True
-    return False
-
 # Executado CRUD
 
 def get_executados(session: Session):
@@ -88,8 +71,8 @@ def create_executado(session: Session, executado: Executado):
     session.refresh(executado)
     return executado
 
-def delete_executado(session: Session, projeto_id: int, sprint_id: int, atividade_id: int):
-    executado = session.get(Executado, (projeto_id, sprint_id, atividade_id))
+def delete_executado(session: Session, executado_id: int):
+    executado = session.get(Executado, executado_id)
     if executado:
         session.delete(executado)
         session.commit()
@@ -113,4 +96,16 @@ def delete_usuario(session: Session, usuario_id: str):
         session.delete(usuario)
         session.commit()
         return True
-    return False 
+    return False
+
+def get_projetos_nested(session):
+    stmt = (
+        select(Projeto)
+        .options(
+            selectinload(Projeto.sprints).selectinload(Sprint.tasks),
+            selectinload(Projeto.atividades)
+        )
+    )
+    result = session.exec(stmt)
+    projetos = result.all()
+    return projetos 

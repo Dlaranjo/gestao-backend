@@ -1,9 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import Session
 from database import get_session, init_db
-from models import Projeto, Sprint, Atividade, Planejado, Executado, Usuario
+from models import Projeto, Sprint, Atividade, Executado, Usuario, ProjetoRead
 from fastapi.middleware.cors import CORSMiddleware
 import crud
+from typing import List
+from sqlmodel import select
 
 app = FastAPI()
 
@@ -21,9 +23,10 @@ def on_startup():
     init_db()
 
 # Projeto endpoints
-@app.get("/projetos")
+@app.get("/projetos", response_model=List[ProjetoRead])
 def read_projetos(session: Session = Depends(get_session)):
-    return crud.get_projetos(session)
+    projetos = crud.get_projetos_nested(session)
+    return [ProjetoRead.from_orm(projeto) for projeto in projetos]
 
 @app.post("/projetos")
 def create_projeto(projeto: Projeto, session: Session = Depends(get_session)):
@@ -46,6 +49,18 @@ def delete_projeto(projeto_id: int, session: Session = Depends(get_session)):
     if not crud.delete_projeto(session, projeto_id):
         raise HTTPException(status_code=404, detail="Projeto not found")
     return {"message": "Projeto deleted successfully"}
+
+@app.get("/projetos/{projeto_id}/atividades")
+def get_atividades_for_project(projeto_id: int, session: Session = Depends(get_session)):
+    atividades = session.exec(select(Atividade).where(Atividade.ProjetoID == projeto_id)).all()
+    sprints = session.exec(select(Sprint).where(Sprint.ProjetoID == projeto_id)).all()
+    sprint_map = {s.SprintID: s.SprintNome for s in sprints}
+    atividades_with_sprint_nome = []
+    for atividade in atividades:
+        atividade_dict = atividade.dict()
+        atividade_dict["SprintNome"] = sprint_map.get(atividade.SprintID, "")
+        atividades_with_sprint_nome.append(atividade_dict)
+    return atividades_with_sprint_nome
 
 # Sprint endpoints
 @app.get("/sprints")
@@ -101,33 +116,6 @@ def delete_atividade(atividade_id: int, session: Session = Depends(get_session))
         raise HTTPException(status_code=404, detail="Atividade not found")
     return {"message": "Atividade deleted successfully"}
 
-# Planejado endpoints
-@app.get("/planejados")
-def read_planejados(session: Session = Depends(get_session)):
-    return crud.get_planejados(session)
-
-@app.post("/planejados")
-def create_planejado(planejado: Planejado, session: Session = Depends(get_session)):
-    return crud.create_planejado(session, planejado)
-
-@app.put("/planejados/{projeto_id}/{sprint_id}/{atividade_id}")
-def update_planejado(projeto_id: int, sprint_id: int, atividade_id: int, planejado: Planejado, session: Session = Depends(get_session)):
-    db_obj = session.get(Planejado, (projeto_id, sprint_id, atividade_id))
-    if not db_obj:
-        raise HTTPException(status_code=404, detail="Planejado not found")
-    for key, value in planejado.dict(exclude_unset=True).items():
-        setattr(db_obj, key, value)
-    session.add(db_obj)
-    session.commit()
-    session.refresh(db_obj)
-    return db_obj
-
-@app.delete("/planejados/{projeto_id}/{sprint_id}/{atividade_id}")
-def delete_planejado(projeto_id: int, sprint_id: int, atividade_id: int, session: Session = Depends(get_session)):
-    if not crud.delete_planejado(session, projeto_id, sprint_id, atividade_id):
-        raise HTTPException(status_code=404, detail="Planejado not found")
-    return {"message": "Planejado deleted successfully"}
-
 # Executado endpoints
 @app.get("/executados")
 def read_executados(session: Session = Depends(get_session)):
@@ -137,9 +125,9 @@ def read_executados(session: Session = Depends(get_session)):
 def create_executado(executado: Executado, session: Session = Depends(get_session)):
     return crud.create_executado(session, executado)
 
-@app.put("/executados/{projeto_id}/{sprint_id}/{atividade_id}")
-def update_executado(projeto_id: int, sprint_id: int, atividade_id: int, executado: Executado, session: Session = Depends(get_session)):
-    db_obj = session.get(Executado, (projeto_id, sprint_id, atividade_id))
+@app.put("/executados/{executado_id}")
+def update_executado(executado_id: int, executado: Executado, session: Session = Depends(get_session)):
+    db_obj = session.get(Executado, executado_id)
     if not db_obj:
         raise HTTPException(status_code=404, detail="Executado not found")
     for key, value in executado.dict(exclude_unset=True).items():
